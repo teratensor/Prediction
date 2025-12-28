@@ -19,6 +19,16 @@ python 3_backtest/backtest.py
 
 # 특정 회차 백테스트
 python 3_backtest/backtest.py --round 1204
+
+# 인사이트 생성
+python 4_insights/sum/generate.py
+python 4_insights/range/generate.py
+python 4_insights/1_firstend/generate.py
+python 4_insights/2_third/generate.py
+
+# 첫수끝수 백테스트
+python 4_insights/1_firstend/backtest_pairs.py
+python 4_insights/1_firstend/backtest_threshold.py
 ```
 
 ## 아키텍처
@@ -28,6 +38,12 @@ python 3_backtest/backtest.py --round 1204
 2_predict/     → 예측 알고리즘 (최근 10회 빈도 기반)
 3_backtest/    → 백테스트 및 결과 검증
 4_insights/    → 패턴 분석 및 통계
+  ├── 1_firstend/  → 첫수/끝수 분석 (75% threshold, 88.1% 적중)
+  ├── 2_third/     → 3번째 번호 분석
+  ├── sum/         → 6개 번호 합계 분석 (권장 118-160)
+  ├── range/       → 구간 코드 분석 (0-4)
+  ├── prime/       → 소수 패턴 분석
+  └── shortcode/   → 세그먼트 코드 분석
 5_combination/ → 조합 수 계산
 ```
 
@@ -52,6 +68,7 @@ save(data)  # data: [{"회차": 1, "ord1": 10, "ball1": 5, "o1": 5, ...}, ...]
 | ball | 실제 로또 공 번호 (1~45) |
 | o값 | ord→ball 변환 테이블 (회차별 상이) |
 | Top24/Mid14/Rest7 | 45개 번호를 점수순으로 24/14/7개 분할 |
+| range 구간 | 0(1-9), 1(10-19), 2(20-29), 3(30-39), 4(40-45) |
 
 ## 요약 코드 형식
 
