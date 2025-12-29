@@ -15,6 +15,9 @@ env/
 # Data files (large)
 *.csv
 
+# Result output
+result/
+
 # OS
 .DS_Store
 Thumbs.db
