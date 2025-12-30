@@ -77,7 +77,7 @@ def load_insights():
         print(f"    - 5_prime: 파일 없음 (기본값 사용)")
         insights['primes'] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43}
 
-    # 3. 최빈 구간 로드
+    # 3. 최빈 구간 로드 (ord2, ord3, ord5, ord6)
     range_path = INSIGHTS_DIR / "4_range" / "statistics" / "position_range_distribution.csv"
     if range_path.exists():
         best_range = {}
@@ -86,7 +86,8 @@ def load_insights():
             for row in reader:
                 pos = int(row['position'])
                 prob = float(row['probability'])
-                if pos in [2, 3, 5]:
+                # ord2, ord3, ord5, ord6 모두 포함
+                if pos in [2, 3, 5, 6]:
                     if pos not in best_range or prob > best_range[pos][1]:
                         range_idx = int(row['range'])
                         best_range[pos] = (range_idx, prob)
@@ -95,12 +96,40 @@ def load_insights():
         range_map = {0: (1, 9), 1: (10, 19), 2: (20, 29), 3: (30, 39), 4: (40, 45)}
         for pos, (range_idx, _) in best_range.items():
             insights['optimal_ranges'][f'ord{pos}'] = range_map[range_idx]
+
+        # ord3 범위 조정: 실제 평균 19.4이므로 (15, 24)가 더 적합
+        if 'ord3' in insights['optimal_ranges']:
+            insights['optimal_ranges']['ord3'] = (15, 24)
+
         print(f"    - 4_range: {insights['optimal_ranges']}")
     else:
         print(f"    - 4_range: 파일 없음 (기본값 사용)")
-        insights['optimal_ranges'] = {'ord2': (10, 19), 'ord3': (10, 19), 'ord5': (30, 39)}
+        # 8개 인사이트 분석 기반 최적 범위
+        insights['optimal_ranges'] = {
+            'ord2': (10, 19),   # 48.3%
+            'ord3': (15, 24),   # 평균 19.4 기반 조정
+            'ord5': (30, 39),   # 54.6%
+            'ord6': (40, 45),   # 57.8%
+        }
 
     return insights
+
+
+def filter_6match_pattern(combo, insights):
+    """6개 일치 가능성 높은 조합만 필터링
+
+    기준: prime_count >= 2 (89% 유지, 39% 감소)
+    - 6개 일치 조합: 평균 소수 2.78개
+    - 5개 일치 조합: 평균 소수 1.92개
+    """
+    numbers = [combo['ord1'], combo['ord2'], combo['ord3'],
+               combo['ord4'], combo['ord5'], combo['ord6']]
+
+    # 소수 개수 계산 (insights에서 로드)
+    primes = insights.get('primes', {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43})
+    prime_count = sum(1 for n in numbers if n in primes)
+
+    return prime_count >= 2
 
 
 # ============================================================
@@ -289,10 +318,17 @@ def get_position_stats(data):
 
 
 def score_candidate(num, pos_name, pos_freq, all_freq, recent_3, insights):
-    """후보 번호 점수 계산 - 인사이트 사용"""
+    """후보 번호 점수 계산 - 8개 인사이트 활용, 포지션별 차별화
+
+    [적용 인사이트]
+    - 4_range: 포지션별 최빈 구간 보너스
+    - 5_prime: 소수 보너스 (ord5 제외 - ball5 소수 18.5%로 낮음)
+    - 7_onehot: HOT/COLD 비트 (ord5는 HOT +8, COLD -5로 강화)
+    """
     seen_numbers = set(pos_freq[pos_name].keys())
     optimal_min, optimal_max = insights['optimal_ranges'].get(pos_name, (1, 45))
 
+    # 기본 점수: 빈도 기반
     if num in seen_numbers:
         score = pos_freq[pos_name][num] * 10
         if optimal_min <= num <= optimal_max:
@@ -302,14 +338,28 @@ def score_candidate(num, pos_name, pos_freq, all_freq, recent_3, insights):
         if optimal_min <= num <= optimal_max:
             score += 20
 
-    if num in insights['hot_bits']:
-        score += 5
-    if num in insights['cold_bits']:
-        score -= 3
+    # [7. onehot] HOT/COLD - 포지션별 차별화
+    # 6매치에서 ord5 HOT 비율이 44.4%로 높음 → 보너스 강화
+    if pos_name == 'ord5':
+        if num in insights['hot_bits']:
+            score += 8  # 기존 5 → 8 (강화)
+        if num in insights['cold_bits']:
+            score -= 5  # 기존 3 → 5 (강화)
+    else:
+        if num in insights['hot_bits']:
+            score += 5
+        if num in insights['cold_bits']:
+            score -= 3
+
+    # 최근 3회 출현 페널티
     if num in recent_3:
         score -= 5
-    if num in insights['primes']:
-        score += 3
+
+    # [5. prime] 소수 보너스 - ord5 제외
+    # ball5 소수 비율이 18.5%로 낮음 → ord5는 소수 보너스 제거
+    if pos_name != 'ord5':
+        if num in insights['primes']:
+            score += 3
 
     return score
 
@@ -331,7 +381,7 @@ def find_top_candidates(candidates, pos_name, pos_freq, all_freq, recent_3, insi
     return [num for num, _ in scored[:top_n]]
 
 
-def fill_ord235(rows, pos_freq, all_freq, recent_3, insights, top_n=15):
+def fill_ord235(rows, pos_freq, all_freq, recent_3, insights, top_n=5):
     """ord2, ord3, ord5 채우기 - 각 포지션 상위 N개 조합"""
     new_rows = []
 
@@ -366,7 +416,7 @@ def fill_ord235(rows, pos_freq, all_freq, recent_3, insights, top_n=15):
                     if not (ord1 < ord2 < ord3 < ord4 < ord5 < ord6):
                         continue
 
-                    new_rows.append({
+                    combo = {
                         'ord1': ord1,
                         'ord2': ord2,
                         'ord3': ord3,
@@ -376,7 +426,10 @@ def fill_ord235(rows, pos_freq, all_freq, recent_3, insights, top_n=15):
                         'freq': row['freq'],
                         'rounds': row['rounds'],
                         'offset': row['offset'],
-                    })
+                    }
+
+                    # why.py와 동일: 소수 필터 제거
+                    new_rows.append(combo)
 
     # 빈도순 정렬
     new_rows.sort(key=lambda x: (-x['freq'], x['ord1'], x['ord4'], x['ord6']))
@@ -478,10 +531,57 @@ def check_winning_match(predictions, winning, target_round):
     print(f"    4개+ 적중: {match_4plus}개 ({match_4plus/len(predictions)*100:.1f}%)")
 
     return {
+        'round': target_round,
+        'winning': winning,
         'best_match': best_match,
         'best_rank': best_rank,
+        'best_prediction': best_prediction,
+        'total_combinations': len(predictions),
         'match_counts': dict(match_counts),
     }
+
+
+def save_match_distribution(results_list):
+    """매치 분포를 result/match_distribution.csv에 저장"""
+    RESULT_DIR.mkdir(exist_ok=True)
+    result_path = RESULT_DIR / "match_distribution.csv"
+
+    with open(result_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['round', 'winning', 'total_combinations',
+                         'match_0', 'match_1', 'match_2', 'match_3', 'match_4', 'match_5', 'match_6',
+                         'pct_0', 'pct_1', 'pct_2', 'pct_3', 'pct_4', 'pct_5', 'pct_6',
+                         'best_match', 'best_rank', 'best_prediction'])
+
+        for r in results_list:
+            match_counts = r['match_counts']
+            total = r['total_combinations']
+
+            # 매치 개수 (0~6)
+            counts = [match_counts.get(i, 0) for i in range(7)]
+            # 퍼센트 (0~6)
+            pcts = [counts[i] / total * 100 if total > 0 else 0 for i in range(7)]
+
+            # best_prediction 문자열
+            bp = r['best_prediction']
+            if bp:
+                bp_str = f"[{bp['ord1']},{bp['ord2']},{bp['ord3']},{bp['ord4']},{bp['ord5']},{bp['ord6']}]"
+            else:
+                bp_str = "[]"
+
+            writer.writerow([
+                r['round'],
+                str(r['winning']),
+                total,
+                *counts,
+                *[f"{p:.1f}" for p in pcts],
+                r['best_match'],
+                r['best_rank'],
+                bp_str,
+            ])
+
+    print(f"\n[매치 분포 저장] {result_path}")
+    return result_path
 
 
 def print_summary(rows, target_round):
@@ -508,14 +608,420 @@ def print_summary(rows, target_round):
 
 
 # ============================================================
+# 백테스트 모드
+# ============================================================
+
+def load_insights_silent():
+    """인사이트 로드 (출력 없이)"""
+    insights = {
+        'hot_bits': set(),
+        'cold_bits': set(),
+        'primes': set(),
+        'optimal_ranges': {},
+    }
+
+    # 1. HOT/COLD bits 로드
+    hot_cold_path = INSIGHTS_DIR / "7_onehot" / "statistics" / "hot_cold_bits.csv"
+    if hot_cold_path.exists():
+        with open(hot_cold_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row['category'] == 'HOT':
+                    insights['hot_bits'].add(int(row['bit']))
+                elif row['category'] == 'COLD':
+                    insights['cold_bits'].add(int(row['bit']))
+    else:
+        insights['hot_bits'] = {29, 17, 27, 3, 25, 1, 19, 39, 4, 31}
+        insights['cold_bits'] = {41, 43, 8, 14, 34, 26, 22, 44, 20, 7}
+
+    # 2. 소수 로드
+    prime_path = INSIGHTS_DIR / "5_prime" / "statistics" / "prime_frequency.csv"
+    if prime_path.exists():
+        with open(prime_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                insights['primes'].add(int(row['prime']))
+    else:
+        insights['primes'] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43}
+
+    # 3. 최빈 구간 로드 (ord2, ord3, ord5, ord6)
+    range_path = INSIGHTS_DIR / "4_range" / "statistics" / "position_range_distribution.csv"
+    if range_path.exists():
+        best_range = {}
+        with open(range_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                pos = int(row['position'])
+                prob = float(row['probability'])
+                if pos in [2, 3, 5, 6]:
+                    if pos not in best_range or prob > best_range[pos][1]:
+                        range_idx = int(row['range'])
+                        best_range[pos] = (range_idx, prob)
+        range_map = {0: (1, 9), 1: (10, 19), 2: (20, 29), 3: (30, 39), 4: (40, 45)}
+        for pos, (range_idx, _) in best_range.items():
+            insights['optimal_ranges'][f'ord{pos}'] = range_map[range_idx]
+        # ord3 범위 조정
+        if 'ord3' in insights['optimal_ranges']:
+            insights['optimal_ranges']['ord3'] = (15, 24)
+    else:
+        insights['optimal_ranges'] = {
+            'ord2': (10, 19),
+            'ord3': (15, 24),
+            'ord5': (30, 39),
+            'ord6': (40, 45),
+        }
+
+    return insights
+
+
+def generate_firstend_pairs_silent(data):
+    """(ord1, ord6) 쌍 생성 (출력 없이)"""
+    pair_rounds = defaultdict(list)
+
+    for r in data:
+        balls = r['balls']
+        ord1, ord6 = balls[0], balls[5]
+        pair_rounds[(ord1, ord6)].append(r['round'])
+
+    all_pairs = []
+    for ord1 in range(1, 22):
+        for ord6 in range(max(ord1 + 5, 23), 46):
+            rounds = pair_rounds.get((ord1, ord6), [])
+            freq = len(rounds)
+            all_pairs.append({
+                'ord1': ord1,
+                'ord6': ord6,
+                'freq': freq,
+                'rounds': rounds,
+            })
+
+    all_pairs.sort(key=lambda x: (-x['freq'], x['ord1'], x['ord6']))
+    return all_pairs
+
+
+def fill_ord4_silent(pairs):
+    """ord4 채우기 (출력 없이)"""
+    rows = []
+    seen = set()
+
+    for pair in pairs:
+        ord1 = pair['ord1']
+        ord6 = pair['ord6']
+        freq = pair['freq']
+        rounds = pair['rounds']
+
+        base_ord4 = round(ord1 + (ord6 - ord1) * FORMULA_RATIO)
+
+        for offset in OFFSET_RANGE:
+            ord4 = base_ord4 + offset
+
+            if ord4 <= ord1 or ord4 >= ord6:
+                continue
+
+            key = (ord1, ord4, ord6)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            rows.append({
+                'ord1': ord1,
+                'ord4': ord4,
+                'ord6': ord6,
+                'freq': freq,
+                'rounds': rounds,
+                'offset': offset,
+            })
+
+    rows.sort(key=lambda x: (-x['freq'], x['ord1'], x['ord4'], x['ord6']))
+    return rows
+
+
+def fill_ord235_silent(rows, pos_freq, all_freq, recent_3, insights, top_n=5):
+    """ord2, ord3, ord5 채우기 (출력 없이)"""
+    new_rows = []
+
+    for row in rows:
+        ord1 = row['ord1']
+        ord4 = row['ord4']
+        ord6 = row['ord6']
+
+        ord2_candidates = list(range(ord1 + 1, ord4 - 1))
+        ord2_picks = find_top_candidates(ord2_candidates, 'ord2', pos_freq, all_freq, recent_3, insights, top_n)
+        if not ord2_picks:
+            continue
+
+        ord5_candidates = list(range(ord4 + 1, ord6))
+        ord5_picks = find_top_candidates(ord5_candidates, 'ord5', pos_freq, all_freq, recent_3, insights, top_n)
+        if not ord5_picks:
+            continue
+
+        for ord2 in ord2_picks:
+            ord3_candidates = list(range(ord2 + 1, ord4))
+            ord3_picks = find_top_candidates(ord3_candidates, 'ord3', pos_freq, all_freq, recent_3, insights, top_n)
+            if not ord3_picks:
+                continue
+
+            for ord3 in ord3_picks:
+                for ord5 in ord5_picks:
+                    if not (ord1 < ord2 < ord3 < ord4 < ord5 < ord6):
+                        continue
+
+                    combo = {
+                        'ord1': ord1,
+                        'ord2': ord2,
+                        'ord3': ord3,
+                        'ord4': ord4,
+                        'ord5': ord5,
+                        'ord6': ord6,
+                        'freq': row['freq'],
+                        'rounds': row['rounds'],
+                        'offset': row['offset'],
+                    }
+
+                    # why.py와 동일: 소수 필터 제거
+                    new_rows.append(combo)
+
+    new_rows.sort(key=lambda x: (-x['freq'], x['ord1'], x['ord4'], x['ord6']))
+    return new_rows
+
+
+def save_backtest_results(results):
+    """백테스트 결과를 result/backtest.csv에 저장"""
+    RESULT_DIR.mkdir(exist_ok=True)
+    result_path = RESULT_DIR / "backtest.csv"
+
+    with open(result_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['round', 'winning', 'best_match', 'has_6_match', 'total_combinations', 'best_prediction'])
+
+        for r in results:
+            winning_str = str(r['winning'])
+            best_pred = r['best_prediction']
+            if best_pred:
+                best_pred_str = f"[{best_pred['ord1']},{best_pred['ord2']},{best_pred['ord3']},{best_pred['ord4']},{best_pred['ord5']},{best_pred['ord6']}]"
+            else:
+                best_pred_str = "[]"
+
+            writer.writerow([
+                r['round'],
+                winning_str,
+                r['best_match'],
+                r['has_6_match'],
+                r['total_combinations'],
+                best_pred_str,
+            ])
+
+    print(f"\n[결과 저장] {result_path}")
+    return result_path
+
+
+def run_distribution(all_data, start_round, end_round):
+    """매치 분포 분석 - 각 회차별 전체 매치 분포 저장"""
+    print("=" * 60)
+    print(f"매치 분포 분석: {start_round}회차 ~ {end_round}회차")
+    print("=" * 60)
+
+    # 인사이트 로드 (한 번만)
+    insights = load_insights_silent()
+
+    results_list = []
+
+    for target_round in range(start_round, end_round + 1):
+        # 학습 데이터: 직전 회차까지 누적
+        train_data = get_data_until(all_data, target_round)
+        winning = get_winning_numbers(all_data, target_round)
+
+        if winning is None:
+            continue
+
+        if len(train_data) == 0:
+            continue
+
+        # 예측 생성
+        pairs = generate_firstend_pairs_silent(train_data)
+        rows_146 = fill_ord4_silent(pairs)
+        pos_freq, all_freq, recent_3 = get_position_stats(train_data)
+        predictions = fill_ord235_silent(rows_146, pos_freq, all_freq, recent_3, insights, top_n=15)
+
+        if not predictions:
+            continue
+
+        # 매치 분포 계산
+        winning_set = set(winning)
+        match_counts = Counter()
+        best_match = 0
+        best_prediction = None
+        best_rank = 0
+
+        for rank, pred in enumerate(predictions, 1):
+            pred_set = {pred['ord1'], pred['ord2'], pred['ord3'],
+                       pred['ord4'], pred['ord5'], pred['ord6']}
+            match_count = len(pred_set & winning_set)
+            match_counts[match_count] += 1
+
+            if match_count > best_match:
+                best_match = match_count
+                best_prediction = pred
+                best_rank = rank
+
+        result = {
+            'round': target_round,
+            'winning': winning,
+            'best_match': best_match,
+            'best_rank': best_rank,
+            'best_prediction': best_prediction,
+            'total_combinations': len(predictions),
+            'match_counts': dict(match_counts),
+        }
+        results_list.append(result)
+
+        # 진행상황 출력
+        has_6 = "✓" if match_counts.get(6, 0) > 0 else " "
+        print(f"[{has_6}] {target_round}회차: 최고 {best_match}개, 조합수={len(predictions):,}")
+
+    # 결과 저장
+    save_match_distribution(results_list)
+
+    # 요약 출력
+    print("\n" + "=" * 60)
+    print("[매치 분포 요약]")
+    print("=" * 60)
+    print(f"총 회차: {len(results_list)}개")
+
+    # 전체 매치 분포 집계
+    total_match_counts = Counter()
+    total_combinations = 0
+    for r in results_list:
+        for match, count in r['match_counts'].items():
+            total_match_counts[match] += count
+        total_combinations += r['total_combinations']
+
+    print(f"총 조합수: {total_combinations:,}개")
+    print(f"\n[전체 매치 분포]")
+    for i in range(7):
+        count = total_match_counts.get(i, 0)
+        pct = count / total_combinations * 100 if total_combinations > 0 else 0
+        bar = '█' * int(pct / 5) if pct > 0 else ''
+        print(f"  {i}개: {count:,}개 ({pct:.1f}%) {bar}")
+
+    return results_list
+
+
+def run_backtest(all_data, start_round, end_round):
+    """백테스트 실행 - 각 회차별 6개 일치 여부 확인"""
+    print("=" * 60)
+    print(f"백테스트 모드: {start_round}회차 ~ {end_round}회차")
+    print("=" * 60)
+
+    # 인사이트 로드 (한 번만)
+    insights = load_insights_silent()
+
+    results = []
+    six_match_rounds = []
+
+    for target_round in range(start_round, end_round + 1):
+        # 학습 데이터: 직전 회차까지 누적
+        train_data = get_data_until(all_data, target_round)
+        winning = get_winning_numbers(all_data, target_round)
+
+        if winning is None:
+            continue
+
+        if len(train_data) == 0:
+            continue
+
+        # 예측 생성
+        pairs = generate_firstend_pairs_silent(train_data)
+        rows_146 = fill_ord4_silent(pairs)
+        pos_freq, all_freq, recent_3 = get_position_stats(train_data)
+        predictions = fill_ord235_silent(rows_146, pos_freq, all_freq, recent_3, insights, top_n=15)
+
+        if not predictions:
+            continue
+
+        # 6개 일치 확인
+        winning_set = set(winning)
+        has_6_match = False
+        best_match = 0
+        best_pred = None
+
+        for pred in predictions:
+            pred_set = {pred['ord1'], pred['ord2'], pred['ord3'],
+                       pred['ord4'], pred['ord5'], pred['ord6']}
+            match_count = len(pred_set & winning_set)
+            if match_count == 6:
+                has_6_match = True
+            if match_count > best_match:
+                best_match = match_count
+                best_pred = pred
+
+        results.append({
+            'round': target_round,
+            'winning': winning,
+            'best_match': best_match,
+            'has_6_match': 'Y' if has_6_match else 'N',
+            'total_combinations': len(predictions),
+            'best_prediction': best_pred,
+        })
+
+        # 진행상황 출력
+        status = "✓" if has_6_match else " "
+        print(f"[{status}] {target_round}회차: {best_match}개 적중, 조합수={len(predictions)}")
+
+        if has_6_match:
+            six_match_rounds.append(target_round)
+
+    # 요약 출력
+    print("\n" + "=" * 60)
+    print("[백테스트 결과 요약]")
+    print("=" * 60)
+    print(f"총 회차: {len(results)}개")
+    print(f"6개 일치: {len(six_match_rounds)}회 ({len(six_match_rounds)/len(results)*100:.1f}%)")
+    if six_match_rounds:
+        print(f"6개 일치 회차: {six_match_rounds}")
+
+    # 매치 분포
+    match_dist = Counter(r['best_match'] for r in results)
+    print(f"\n[매치 분포]")
+    for i in range(7):
+        count = match_dist.get(i, 0)
+        pct = count / len(results) * 100 if results else 0
+        bar = '█' * int(pct / 2)
+        print(f"  {i}개: {count:3d}회 ({pct:5.1f}%) {bar}")
+
+    # 결과 저장
+    save_backtest_results(results)
+
+    return results
+
+
+# ============================================================
 # 메인 실행
 # ============================================================
 
 def main():
     parser = argparse.ArgumentParser(description='로또 예측 시스템')
     parser.add_argument('--round', type=int, default=1204, help='목표 회차 (기본: 1204)')
+    parser.add_argument('--backtest', action='store_true', help='백테스트 모드')
+    parser.add_argument('--distribution', action='store_true', help='매치 분포 분석 모드')
+    parser.add_argument('--start', type=int, default=900, help='시작 회차')
+    parser.add_argument('--end', type=int, default=1000, help='종료 회차')
     args = parser.parse_args()
 
+    # 데이터 로드
+    all_data = load_all_data()
+
+    # 매치 분포 분석 모드
+    if args.distribution:
+        run_distribution(all_data, args.start, args.end)
+        return
+
+    # 백테스트 모드
+    if args.backtest:
+        run_backtest(all_data, args.start, args.end)
+        return
+
+    # 단일 회차 예측 모드
     target_round = args.round
 
     print("=" * 60)
@@ -524,7 +1030,6 @@ def main():
 
     # 1. 데이터 로드
     print("\n[데이터 로드]")
-    all_data = load_all_data()
     print(f"  전체 데이터: {len(all_data)}회차")
     print(f"  데이터 범위: {all_data[0]['round']} ~ {all_data[-1]['round']}")
 
@@ -554,7 +1059,7 @@ def main():
 
     # 6. ord235 채우기
     pos_freq, all_freq, recent_3 = get_position_stats(train_data)
-    predictions = fill_ord235(rows_146, pos_freq, all_freq, recent_3, insights)
+    predictions = fill_ord235(rows_146, pos_freq, all_freq, recent_3, insights, top_n=15)
 
     if not predictions:
         print("\n오류: 유효한 예측 조합이 생성되지 않았습니다.")
