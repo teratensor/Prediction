@@ -1,4 +1,4 @@
-# CLAUDE.md (v1.01)
+# CLAUDE.md (v1.03)
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -37,7 +37,8 @@ main.py           ← 통합 예측 파이프라인 (진입점)
 2_insights/       → 8개 인사이트 (통계 생성)
 3_predict/        → 개별 단계 스크립트 (레거시)
 4_backtest/       → 분석 도구
-5_finetune/       → 필터링 최적화
+5_cluster/        → 5개 공유 그룹 클러스터링
+6_finetune/       → 필터링 최적화
 result/           → 예측 결과 저장
 ```
 
@@ -55,15 +56,22 @@ result/           → 예측 결과 저장
 ord4 = round(ord1 + (ord6 - ord1) × 0.60) ± 10
 ```
 
-## 인사이트 동적 로드
+## 인사이트 (2_insights/)
 
-`main.py`의 `load_insights()`가 아래 파일에서 자동 로드:
+8개 인사이트 중 main.py에서 사용하는 3개:
 
 | 인사이트 | 파일 | 용도 |
 |----------|------|------|
-| HOT/COLD bits | `2_insights/7_onehot/statistics/hot_cold_bits.csv` | 점수 가감 |
-| 소수 | `2_insights/5_prime/statistics/prime_frequency.csv` | 소수 보너스 |
-| 최빈 구간 | `2_insights/4_range/statistics/position_range_distribution.csv` | 구간 보너스 |
+| HOT/COLD bits | `7_onehot/statistics/hot_cold_bits.csv` | 점수 가감 |
+| 소수 | `5_prime/statistics/prime_frequency.csv` | 소수 보너스 |
+| 최빈 구간 | `4_range/statistics/position_range_distribution.csv` | 구간 보너스 |
+
+기타 인사이트 (분석용):
+- `1_consecutive`: 연속수 패턴
+- `2_lastnum`: ball6 간격
+- `3_sum`: 합계 분포
+- `6_shortcode`: Top24/Mid14/Rest7 세그먼트 분석 (Ord/Ball 숏코드)
+- `8_ac`: AC값 분포
 
 ## 점수화 기준 (ord235)
 
@@ -96,6 +104,28 @@ ord4 = round(ord1 + (ord6 - ord1) × 0.60) ± 10
 | firstend | (ord1, ord6) 쌍 - 첫수와 끝수 |
 | seen/unseen | 학습 데이터에 출현한/안 한 번호 |
 
+## ⚠️ 중요: ord1~ord6 의존성 구조
+
+**ord 번호들은 순차적으로 의존적**:
+
+```
+ord1, ord6 (firstend) → ord4 → ord2 → ord3 → ord5
+```
+
+| 단계 | 결정 기준 | 의존성 |
+|------|-----------|--------|
+| ord1, ord6 | 독립적 생성 | 없음 (477개 쌍) |
+| ord4 | ord1 + (ord6-ord1) × 0.60 | ord1, ord6 |
+| ord2 | ord1 < ord2 < ord4 | ord1, ord4 |
+| ord3 | ord2 < ord3 < ord4 | ord2, ord4 |
+| ord5 | ord4 < ord5 < ord6 | ord4, ord6 |
+
+**마지막 번호(ord5) 결정 시 모든 인사이트 동원**:
+- HOT/COLD bits (+8/-5, 가장 강한 가중치)
+- 최빈 구간 (30-39가 54.6%)
+- 빈도 기반 점수
+- 최근 출현 페널티
+
 ## 최근 성능 (1195~1204회차)
 
 | 지표 | 값 |
@@ -113,6 +143,13 @@ MCP MySQL 도구 사용:
 ## 데이터 형식
 
 **winning_numbers.csv**: round, ord1-6, ball1-6, o1-o45
+
+| 컬럼 | 설명 |
+|------|------|
+| round | 회차 |
+| ord1~6 | 오름차순 정렬된 당첨번호 |
+| ball1~6 | 원본 당첨번호 |
+| o1~o45 | 각 번호(1~45)의 빈도 순위 (1=최다빈도, 45=최저빈도) |
 
 **result/backtest.csv**: round, winning, best_match, has_6_match, total_combinations, best_prediction
 

@@ -996,6 +996,495 @@ def run_backtest(all_data, start_round, end_round):
 
 
 # ============================================================
+# 5개 일치 확장 모드
+# ============================================================
+
+def extract_5match_combinations(predictions, winning):
+    """5개 일치 조합 추출 및 놓친 포지션 식별
+
+    Returns:
+        list[dict]: 각 5개 일치 조합 정보
+    """
+    winning_set = set(winning)
+    position_names = ['ord1', 'ord2', 'ord3', 'ord4', 'ord5', 'ord6']
+
+    five_match_combos = []
+
+    for pred in predictions:
+        pred_list = [pred['ord1'], pred['ord2'], pred['ord3'],
+                     pred['ord4'], pred['ord5'], pred['ord6']]
+        pred_set = set(pred_list)
+
+        matched = pred_set & winning_set
+        if len(matched) != 5:
+            continue
+
+        # 놓친 포지션 찾기 (예측값이 당첨번호에 없는 위치)
+        for i, (pos_name, pred_val) in enumerate(zip(position_names, pred_list)):
+            if pred_val not in winning_set:
+                five_match_combos.append({
+                    'combo': pred_list,
+                    'matched_values': sorted(matched),
+                    'missed_position': pos_name,
+                    'missed_idx': i,
+                    'predicted_value': pred_val,
+                    'actual_value': winning[i],
+                })
+                break
+
+    return five_match_combos
+
+
+def expand_5match_to_6match(five_matches, winning):
+    """5개 일치 조합을 확장하여 6개 일치 후보 생성
+
+    각 5개 일치 조합에서 틀린 포지션의 유효 범위 내 모든 후보로 교체
+    """
+    expanded = []
+    winning_set = set(winning)
+
+    for item in five_matches:
+        combo = item['combo']
+        missed_pos = item['missed_position']
+        missed_idx = item['missed_idx']
+        original_val = item['predicted_value']
+
+        # 포지션별 유효 범위 계산
+        ord1, ord2, ord3, ord4, ord5, ord6 = combo
+
+        if missed_pos == 'ord1':
+            candidates = range(1, ord2)  # 1 ~ ord2-1
+        elif missed_pos == 'ord2':
+            candidates = range(ord1 + 1, ord3)  # ord1+1 ~ ord3-1
+        elif missed_pos == 'ord3':
+            candidates = range(ord2 + 1, ord4)  # ord2+1 ~ ord4-1
+        elif missed_pos == 'ord4':
+            candidates = range(ord3 + 1, ord5)  # ord3+1 ~ ord5-1
+        elif missed_pos == 'ord5':
+            candidates = range(ord4 + 1, ord6)  # ord4+1 ~ ord6-1
+        elif missed_pos == 'ord6':
+            candidates = range(ord5 + 1, 46)  # ord5+1 ~ 45
+        else:
+            continue
+
+        # 각 후보로 교체한 조합 생성
+        for new_val in candidates:
+            if new_val == original_val:
+                continue  # 원래 값은 스킵
+
+            # 새 조합 생성
+            new_combo = combo.copy()
+            new_combo[missed_idx] = new_val
+
+            # 6개 일치 여부 확인
+            is_6match = set(new_combo) == winning_set
+
+            expanded.append({
+                'original_combo': combo,
+                'expanded_combo': new_combo,
+                'expanded_position': missed_pos,
+                'original_value': original_val,
+                'new_value': new_val,
+                'is_6match': is_6match,
+            })
+
+    return expanded
+
+
+def save_5match_csv(all_5matches, result_path):
+    """5개 일치 조합을 CSV로 저장"""
+    with open(result_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['round', 'winning', 'combo', 'missed_position',
+                         'predicted_value', 'actual_value'])
+
+        for item in all_5matches:
+            writer.writerow([
+                item['round'],
+                str(item['winning']),
+                str(item['combo']),
+                item['missed_position'],
+                item['predicted_value'],
+                item['actual_value'],
+            ])
+
+    return result_path
+
+
+def save_expanded_csv(all_expanded, result_path):
+    """확장 조합을 CSV로 저장"""
+    with open(result_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['round', 'winning', 'original_combo', 'expanded_combo',
+                         'expanded_position', 'original_value', 'new_value', 'is_6match'])
+
+        for item in all_expanded:
+            writer.writerow([
+                item['round'],
+                str(item['winning']),
+                str(item['original_combo']),
+                str(item['expanded_combo']),
+                item['expanded_position'],
+                item['original_value'],
+                item['new_value'],
+                'Y' if item['is_6match'] else 'N',
+            ])
+
+    return result_path
+
+
+def save_expansion_backtest_csv(results, result_path):
+    """확장 백테스트 결과를 CSV로 저장"""
+    with open(result_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['round', 'winning', '5match_count', 'expanded_count',
+                         'original_has_6match', 'expanded_has_6match', 'improved'])
+
+        for r in results:
+            writer.writerow([
+                r['round'],
+                str(r['winning']),
+                r['5match_count'],
+                r['expanded_count'],
+                'Y' if r['original_has_6match'] else 'N',
+                'Y' if r['expanded_has_6match'] else 'N',
+                'Y' if r['improved'] else 'N',
+            ])
+
+    return result_path
+
+
+def save_expansion_full_csv(all_expanded, result_path):
+    """모든 확장 조합을 CSV로 저장 (단일 회차용)"""
+    with open(result_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['round', 'winning', 'original_combo', 'expanded_combo',
+                         'expanded_position', 'original_value', 'new_value', 'is_6match'])
+
+        for item in all_expanded:
+            writer.writerow([
+                item['round'],
+                str(item['winning']),
+                str(item['original_combo']),
+                str(item['expanded_combo']),
+                item['expanded_position'],
+                item['original_value'],
+                item['new_value'],
+                'Y' if item['is_6match'] else 'N',
+            ])
+
+    return result_path
+
+
+def run_expansion_single(all_data, target_round):
+    """단일 회차 확장 백테스트 - 모든 확장 조합을 CSV로 저장"""
+    print("=" * 60)
+    print(f"확장 백테스트: {target_round}회차")
+    print("=" * 60)
+
+    # 인사이트 로드
+    insights = load_insights_silent()
+
+    # 학습 데이터
+    train_data = get_data_until(all_data, target_round)
+    winning = get_winning_numbers(all_data, target_round)
+
+    if winning is None:
+        print(f"오류: {target_round}회차 당첨번호가 없습니다.")
+        return None
+
+    if len(train_data) == 0:
+        print(f"오류: 학습 데이터가 없습니다.")
+        return None
+
+    print(f"\n[데이터]")
+    print(f"  당첨번호: {winning}")
+    print(f"  학습 데이터: {len(train_data)}회차")
+
+    # 예측 생성
+    print(f"\n[예측 생성]")
+    pairs = generate_firstend_pairs_silent(train_data)
+    rows_146 = fill_ord4_silent(pairs)
+    pos_freq, all_freq, recent_3 = get_position_stats(train_data)
+    predictions = fill_ord235_silent(rows_146, pos_freq, all_freq, recent_3, insights, top_n=15)
+
+    if not predictions:
+        print("오류: 예측 조합이 생성되지 않았습니다.")
+        return None
+
+    print(f"  총 예측 조합: {len(predictions):,}개")
+
+    # 원본 6개 일치 확인
+    winning_set = set(winning)
+    original_6match_count = 0
+    for pred in predictions:
+        pred_set = {pred['ord1'], pred['ord2'], pred['ord3'],
+                   pred['ord4'], pred['ord5'], pred['ord6']}
+        if len(pred_set & winning_set) == 6:
+            original_6match_count += 1
+
+    print(f"  원본 6개 일치: {original_6match_count}개")
+
+    # 5개 일치 조합 추출
+    five_matches = extract_5match_combinations(predictions, winning)
+    print(f"  5개 일치 조합: {len(five_matches)}개")
+
+    # 확장 조합 생성
+    expanded = expand_5match_to_6match(five_matches, winning)
+
+    # 회차/당첨번호 정보 추가
+    for item in five_matches:
+        item['round'] = target_round
+        item['winning'] = winning
+
+    for item in expanded:
+        item['round'] = target_round
+        item['winning'] = winning
+
+    # 6개 일치 확장 조합 수
+    expanded_6match_count = sum(1 for e in expanded if e['is_6match'])
+
+    print(f"\n[확장 결과]")
+    print(f"  총 확장 조합: {len(expanded)}개")
+    print(f"  확장 중 6개 일치: {expanded_6match_count}개")
+
+    # CSV 저장
+    RESULT_DIR.mkdir(exist_ok=True)
+
+    save_5match_csv(five_matches, RESULT_DIR / "5match_combos.csv")
+    save_expansion_full_csv(expanded, RESULT_DIR / "expansion_backtest.csv")
+
+    print(f"\n[저장된 파일]")
+    print(f"  - result/5match_combos.csv ({len(five_matches)}개)")
+    print(f"  - result/expansion_backtest.csv ({len(expanded)}개)")
+
+    return expanded
+
+
+def run_expansion_backtest(all_data, start_round, end_round):
+    """확장 백테스트 실행 - 5개 일치 조합 확장하여 6개 일치 복구 테스트"""
+    print("=" * 60)
+    print(f"확장 백테스트: {start_round}회차 ~ {end_round}회차")
+    print("=" * 60)
+
+    # 인사이트 로드
+    insights = load_insights_silent()
+
+    results = []
+    all_5matches = []
+    all_expanded = []
+
+    original_6match_count = 0
+    expanded_6match_count = 0
+    improved_count = 0
+
+    for target_round in range(start_round, end_round + 1):
+        # 학습 데이터
+        train_data = get_data_until(all_data, target_round)
+        winning = get_winning_numbers(all_data, target_round)
+
+        if winning is None or len(train_data) == 0:
+            continue
+
+        # 예측 생성
+        pairs = generate_firstend_pairs_silent(train_data)
+        rows_146 = fill_ord4_silent(pairs)
+        pos_freq, all_freq, recent_3 = get_position_stats(train_data)
+        predictions = fill_ord235_silent(rows_146, pos_freq, all_freq, recent_3, insights, top_n=15)
+
+        if not predictions:
+            continue
+
+        # 원본 6개 일치 확인
+        winning_set = set(winning)
+        original_has_6match = False
+        for pred in predictions:
+            pred_set = {pred['ord1'], pred['ord2'], pred['ord3'],
+                       pred['ord4'], pred['ord5'], pred['ord6']}
+            if len(pred_set & winning_set) == 6:
+                original_has_6match = True
+                break
+
+        # 5개 일치 조합 추출
+        five_matches = extract_5match_combinations(predictions, winning)
+
+        # 확장 조합 생성
+        expanded = expand_5match_to_6match(five_matches, winning)
+
+        # 확장 후 6개 일치 확인
+        expanded_has_6match = original_has_6match or any(e['is_6match'] for e in expanded)
+
+        # 개선 여부
+        improved = expanded_has_6match and not original_has_6match
+
+        # 통계 업데이트
+        if original_has_6match:
+            original_6match_count += 1
+        if expanded_has_6match:
+            expanded_6match_count += 1
+        if improved:
+            improved_count += 1
+
+        # 결과 저장
+        results.append({
+            'round': target_round,
+            'winning': winning,
+            '5match_count': len(five_matches),
+            'expanded_count': len(expanded),
+            'original_has_6match': original_has_6match,
+            'expanded_has_6match': expanded_has_6match,
+            'improved': improved,
+        })
+
+        # 5개 일치 조합에 회차 정보 추가
+        for item in five_matches:
+            item['round'] = target_round
+            item['winning'] = winning
+            all_5matches.append(item)
+
+        # 확장 조합에 회차 정보 추가
+        for item in expanded:
+            item['round'] = target_round
+            item['winning'] = winning
+            all_expanded.append(item)
+
+        # 진행상황 출력
+        orig_mark = "✓" if original_has_6match else " "
+        exp_mark = "✓" if expanded_has_6match else " "
+        imp_mark = "↑" if improved else " "
+        print(f"[{orig_mark}→{exp_mark}]{imp_mark} {target_round}회차: "
+              f"5매치={len(five_matches)}, 확장={len(expanded)}")
+
+    # CSV 저장
+    RESULT_DIR.mkdir(exist_ok=True)
+
+    save_5match_csv(all_5matches, RESULT_DIR / "5match_combos.csv")
+    save_expanded_csv(all_expanded, RESULT_DIR / "expanded_combos.csv")
+    save_expansion_backtest_csv(results, RESULT_DIR / "expansion_backtest.csv")
+
+    # 요약 출력
+    total_rounds = len(results)
+    print("\n" + "=" * 60)
+    print("[확장 백테스트 결과]")
+    print("=" * 60)
+    print(f"총 회차: {total_rounds}개")
+    print(f"원본 6개 일치: {original_6match_count}회 ({original_6match_count/total_rounds*100:.1f}%)")
+    print(f"확장 6개 일치: {expanded_6match_count}회 ({expanded_6match_count/total_rounds*100:.1f}%)")
+    print(f"개선된 회차: {improved_count}회")
+    print(f"\n총 5개 일치 조합: {len(all_5matches)}개")
+    print(f"총 확장 조합: {len(all_expanded)}개")
+    print(f"확장 중 6개 일치: {sum(1 for e in all_expanded if e['is_6match'])}개")
+
+    print(f"\n[저장된 파일]")
+    print(f"  - result/5match_combos.csv")
+    print(f"  - result/expanded_combos.csv")
+    print(f"  - result/expansion_backtest.csv")
+
+    return results
+
+
+# ============================================================
+# 클러스터링 모드
+# ============================================================
+
+def run_cluster_mode(all_data, args):
+    """5개 공유 그룹 클러스터링 실행"""
+    from importlib import import_module
+
+    # cluster 모듈 동적 로드
+    sys.path.insert(0, str(BASE_DIR / "5_cluster"))
+    import cluster as cluster_module
+
+    # 범위 백테스트
+    if args.start != 900 or args.end != 1000:
+        print("=" * 60)
+        print(f"클러스터 백테스트: {args.start}회차 ~ {args.end}회차")
+        print("=" * 60)
+
+        results = []
+
+        for target_round in range(args.start, args.end + 1):
+            winning = get_winning_numbers(all_data, target_round)
+            if winning is None:
+                continue
+
+            # 예측 생성
+            predictions = generate_predictions_silent(all_data, target_round)
+            if not predictions:
+                continue
+
+            # 클러스터링
+            cluster_counts = cluster_module.cluster_combinations(predictions)
+            top_clusters = cluster_module.get_top_clusters(cluster_counts, 100)
+
+            # 당첨번호 체크
+            match_5 = 0
+            best_rank = None
+
+            for rank, (five_key, count) in enumerate(top_clusters, 1):
+                check = cluster_module.check_winning_in_cluster(five_key, count, winning)
+                if check['has_5match']:
+                    match_5 += 1
+                    if best_rank is None:
+                        best_rank = rank
+
+            results.append({
+                'round': target_round,
+                'match_5': match_5,
+                'best_rank': best_rank,
+            })
+
+            status = "✓" if match_5 > 0 else " "
+            rank_str = f"rank={best_rank}" if best_rank else "N/A"
+            print(f"[{status}] {target_round}회차: 5매치={match_5}, {rank_str}")
+
+        # 요약
+        total = len(results)
+        has_5 = sum(1 for r in results if r['match_5'] > 0)
+
+        print("\n" + "=" * 60)
+        print(f"[백테스트 결과]")
+        print(f"  총 회차: {total}개")
+        print(f"  Top-100 중 5개 일치 포함: {has_5}회 ({has_5/total*100:.1f}%)")
+
+    else:
+        # 단일 회차 클러스터링
+        target_round = args.round
+
+        print("=" * 60)
+        print(f"클러스터링: {target_round}회차")
+        print("=" * 60)
+
+        winning = get_winning_numbers(all_data, target_round)
+
+        # 예측 생성
+        predictions = generate_predictions_silent(all_data, target_round)
+        if not predictions:
+            print("오류: 예측 조합이 생성되지 않았습니다.")
+            return
+
+        # 클러스터링 실행
+        top_clusters = cluster_module.run_clustering(predictions, winning, top_n=100)
+
+        print(f"\n[저장] 5_cluster/result/clusters.csv")
+
+
+def generate_predictions_silent(all_data, target_round):
+    """예측 조합 생성 (출력 없음)"""
+    train_data = get_data_until(all_data, target_round)
+    if len(train_data) == 0:
+        return None
+
+    insights = load_insights_silent()
+    pairs = generate_firstend_pairs_silent(train_data)
+    rows_146 = fill_ord4_silent(pairs)
+    pos_freq, all_freq, recent_3 = get_position_stats(train_data)
+    predictions = fill_ord235_silent(rows_146, pos_freq, all_freq, recent_3, insights, top_n=15)
+
+    return predictions
+
+
+# ============================================================
 # 메인 실행
 # ============================================================
 
@@ -1004,12 +1493,28 @@ def main():
     parser.add_argument('--round', type=int, default=1204, help='목표 회차 (기본: 1204)')
     parser.add_argument('--backtest', action='store_true', help='백테스트 모드')
     parser.add_argument('--distribution', action='store_true', help='매치 분포 분석 모드')
+    parser.add_argument('--expansion', action='store_true', help='5개 일치 → 6개 확장 백테스트')
+    parser.add_argument('--cluster', action='store_true', help='5개 공유 그룹 클러스터링')
     parser.add_argument('--start', type=int, default=900, help='시작 회차')
     parser.add_argument('--end', type=int, default=1000, help='종료 회차')
     args = parser.parse_args()
 
     # 데이터 로드
     all_data = load_all_data()
+
+    # 클러스터링 모드
+    if args.cluster:
+        run_cluster_mode(all_data, args)
+        return
+
+    # 5개 일치 확장 백테스트 모드
+    if args.expansion:
+        # --start/--end 지정 시 범위 백테스트, 아니면 --round로 단일 회차
+        if args.start != 900 or args.end != 1000:
+            run_expansion_backtest(all_data, args.start, args.end)
+        else:
+            run_expansion_single(all_data, args.round)
+        return
 
     # 매치 분포 분석 모드
     if args.distribution:
