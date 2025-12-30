@@ -2,7 +2,7 @@
 
 당첨번호 패턴 분석 및 통계 생성
 
-## 8개 인사이트
+## 9개 인사이트
 
 | # | 폴더 | 설명 | main.py 적용 |
 |---|------|------|-------------|
@@ -11,9 +11,10 @@
 | 3 | 3_sum | 합계 분포 | - |
 | 4 | 4_range | 포지션별 구간 분포 | optimal_ranges |
 | 5 | 5_prime | 소수 분포 | primes |
-| 6 | 6_shortcode | Top24/Rest21 분석 | - |
+| 6 | 6_shortcode | Top24/Mid14/Rest7 분석 | - |
 | 7 | 7_onehot | HOT/COLD 비트 | hot_bits, cold_bits |
 | 8 | 8_ac | AC값 분포 | - |
+| 9 | 9_ord2_ml | ord2 예측 ML 모델 | XGBoost 기반 |
 
 ## main.py 인사이트 로드
 
