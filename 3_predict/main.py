@@ -9,6 +9,8 @@
 3. 6개 조합 생성 및 이상치 점수 계산
 4. 다양성 필터링 (3자리 이상 중복 제거)
 5. 최종 100개 선택
+
++ Ball 예측도 함께 출력
 """
 
 import sys
@@ -16,7 +18,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 from itertools import product
 
-# 모듈 경로 추가
+# 모듈 경로 추가 (3_predict 우선)
 sys.path.insert(0, str(Path(__file__).parent))
 
 from common import (
@@ -52,6 +54,16 @@ predict_ord2 = ord2_ml.predict_ord2
 predict_ord3 = ord3_ml.predict_ord3
 predict_ord4 = ord4_ml.predict_ord4
 predict_ord5 = ord5_ml.predict_ord5
+
+# Ball 예측 모듈 로드
+_ball_base = Path(__file__).parent.parent / "5_ball_predict"
+try:
+    ball_main = load_module("ball_main", _ball_base / "main.py")
+    predict_ball_for_round = ball_main.predict_ball_for_round
+    print_ball_combinations = ball_main.print_ball_combinations
+    BALL_PREDICT_AVAILABLE = True
+except Exception:
+    BALL_PREDICT_AVAILABLE = False
 
 
 def generate_all_combinations(
@@ -366,6 +378,7 @@ def main():
         print(f"파라미터: top_pairs={args.top_pairs}, top_inner={args.top_inner}")
 
         for target_round in range(start_round, end_round + 1):
+            # Ord 예측
             predictions = predict_for_round(
                 target_round, all_data, args.top,
                 top_pairs=args.top_pairs, top_inner=args.top_inner,
@@ -374,10 +387,20 @@ def main():
 
             # 실제 당첨번호 확인
             actual_data = next((d for d in all_data if d['round'] == target_round), None)
-            actual = tuple(actual_data[f'ord{i}'] for i in range(1, 7)) if actual_data else None
+            actual_ord = tuple(actual_data[f'ord{i}'] for i in range(1, 7)) if actual_data else None
 
-            # 100개 전체 출력
-            print_all_combinations(predictions, actual)
+            # Ord 100개 전체 출력
+            print_all_combinations(predictions, actual_ord)
+
+            # Ball 예측
+            if BALL_PREDICT_AVAILABLE:
+                ball_predictions = predict_ball_for_round(
+                    target_round, all_data, args.top,
+                    top_pairs=args.top_pairs, top_inner=args.top_inner,
+                    verbose=True
+                )
+                actual_ball = tuple(actual_data[f'ball{i}'] for i in range(1, 7)) if actual_data else None
+                print_ball_combinations(ball_predictions, actual_ball)
 
     elif len(args.rounds) == 1:
         # 단일 회차 예측
@@ -385,6 +408,7 @@ def main():
         print(f"\n{target_round}회차 예측 시작...")
         print(f"파라미터: top_pairs={args.top_pairs}, top_inner={args.top_inner}")
 
+        # Ord 예측
         predictions = predict_for_round(
             target_round, all_data, args.top,
             top_pairs=args.top_pairs, top_inner=args.top_inner,
@@ -393,10 +417,20 @@ def main():
 
         # 실제 당첨번호 확인
         actual_data = next((d for d in all_data if d['round'] == target_round), None)
-        actual = tuple(actual_data[f'ord{i}'] for i in range(1, 7)) if actual_data else None
+        actual_ord = tuple(actual_data[f'ord{i}'] for i in range(1, 7)) if actual_data else None
 
-        # 100개 전체 출력
-        print_all_combinations(predictions, actual)
+        # Ord 100개 전체 출력
+        print_all_combinations(predictions, actual_ord)
+
+        # Ball 예측
+        if BALL_PREDICT_AVAILABLE:
+            ball_predictions = predict_ball_for_round(
+                target_round, all_data, args.top,
+                top_pairs=args.top_pairs, top_inner=args.top_inner,
+                verbose=True
+            )
+            actual_ball = tuple(actual_data[f'ball{i}'] for i in range(1, 7)) if actual_data else None
+            print_ball_combinations(ball_predictions, actual_ball)
 
     else:
         # 기본: 가장 최근 회차 + 1 예측
@@ -405,14 +439,24 @@ def main():
         print(f"\n다음 회차 ({next_round}회) 예측 시작...")
         print(f"파라미터: top_pairs={args.top_pairs}, top_inner={args.top_inner}")
 
+        # Ord 예측
         predictions = predict_for_round(
             next_round, all_data, args.top,
             top_pairs=args.top_pairs, top_inner=args.top_inner,
             verbose=True
         )
 
-        # 100개 전체 출력 (실제 번호 없음)
+        # Ord 100개 전체 출력 (실제 번호 없음)
         print_all_combinations(predictions, None)
+
+        # Ball 예측
+        if BALL_PREDICT_AVAILABLE:
+            ball_predictions = predict_ball_for_round(
+                next_round, all_data, args.top,
+                top_pairs=args.top_pairs, top_inner=args.top_inner,
+                verbose=True
+            )
+            print_ball_combinations(ball_predictions, None)
 
 
 if __name__ == '__main__':
