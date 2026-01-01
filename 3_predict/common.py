@@ -60,7 +60,7 @@ class Combination:
 
 
 def load_winning_data() -> List[Dict]:
-    """당첨번호 데이터 로드"""
+    """당첨번호 데이터 로드 (o1~o45 포함)"""
     results = []
     with open(DATA_PATH, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
@@ -78,6 +78,9 @@ def load_winning_data() -> List[Dict]:
             # ball1~ball6 추가
             for i in range(1, 7):
                 data[f'ball{i}'] = int(row[f'ball{i}'])
+            # o1~o45 추가 (Ball→Ord 변환용)
+            for i in range(1, 46):
+                data[f'o{i}'] = int(row[f'o{i}'])
             results.append(data)
     return sorted(results, key=lambda x: x['round'])
 

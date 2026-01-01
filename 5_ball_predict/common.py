@@ -37,7 +37,7 @@ class BallCombination:
 
 
 def load_winning_data() -> List[Dict]:
-    """당첨번호 데이터 로드"""
+    """당첨번호 데이터 로드 (o1~o45 포함)"""
     results = []
     with open(DATA_PATH, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
@@ -55,8 +55,49 @@ def load_winning_data() -> List[Dict]:
             # ball1~ball6 추가
             for i in range(1, 7):
                 data[f'ball{i}'] = int(row[f'ball{i}'])
+            # o1~o45 추가 (Ball→Ord 변환용)
+            for i in range(1, 46):
+                data[f'o{i}'] = int(row[f'o{i}'])
             results.append(data)
     return sorted(results, key=lambda x: x['round'])
+
+
+def ball_to_ord_position(ball_num: int, round_data: Dict) -> int:
+    """
+    Ball 번호를 해당 회차의 판매순위(Ord position)로 변환
+
+    예: ball_num=3, round_data에서 o42=3이면 → 42 반환
+    (3번 공의 판매순위가 42위)
+
+    Args:
+        ball_num: Ball 번호 (1~45)
+        round_data: 해당 회차 데이터 (o1~o45 포함)
+
+    Returns:
+        판매순위 (1~45), 없으면 0
+    """
+    # o1~o45 중에서 값이 ball_num인 인덱스를 찾음
+    for i in range(1, 46):
+        if round_data.get(f'o{i}', 0) == ball_num:
+            return i
+    return 0
+
+
+def convert_ball_combo_to_ord(
+    ball_combo: Tuple[int, ...],
+    round_data: Dict
+) -> Tuple[int, ...]:
+    """
+    Ball 조합을 Ord 순서로 변환
+
+    Args:
+        ball_combo: Ball 조합 (ball1, ball2, ..., ball6)
+        round_data: 해당 회차 데이터
+
+    Returns:
+        Ord 순서로 변환된 튜플
+    """
+    return tuple(ball_to_ord_position(b, round_data) for b in ball_combo)
 
 
 def calculate_ball_outlier_score(numbers: Tuple[int, ...], prev_numbers: Tuple[int, ...] = None) -> float:

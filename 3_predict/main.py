@@ -400,7 +400,7 @@ def main():
                     verbose=True
                 )
                 actual_ball = tuple(actual_data[f'ball{i}'] for i in range(1, 7)) if actual_data else None
-                print_ball_combinations(ball_predictions, actual_ball)
+                print_ball_combinations(ball_predictions, actual_ball, actual_data)
 
     elif len(args.rounds) == 1:
         # 단일 회차 예측
@@ -430,7 +430,7 @@ def main():
                 verbose=True
             )
             actual_ball = tuple(actual_data[f'ball{i}'] for i in range(1, 7)) if actual_data else None
-            print_ball_combinations(ball_predictions, actual_ball)
+            print_ball_combinations(ball_predictions, actual_ball, actual_data)
 
     else:
         # 기본: 가장 최근 회차 + 1 예측
