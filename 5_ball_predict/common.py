@@ -42,6 +42,9 @@ def load_winning_data() -> List[Dict]:
     with open(DATA_PATH, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
+            # 당첨번호가 없는 회차 스킵 (빈 값 체크)
+            if not row['ord1'] or not row['ord1'].strip():
+                continue
             data = {
                 'round': int(row['round']),
                 'ord1': int(row['ord1']),

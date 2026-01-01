@@ -177,15 +177,11 @@ def predict_ball_for_round(
     return diverse_combos
 
 
-def print_ball_combinations(predictions: List[BallCombination], actual: tuple = None, round_data: Dict = None):
-    """Ball 조합 전체 출력 (Ball→Ord 변환 나란히 표시)"""
-    print(f"\n{'='*90}")
+def print_ball_combinations(predictions: List[BallCombination], actual: tuple = None, round_data: Dict = None, start_num: int = 1):
+    """Ball 조합 전체 출력 (Ball→Ord 변환, 오름차순 정렬) - 요약 데이터 반환"""
+    actual_ord = None
     if round_data:
         actual_ord = tuple(round_data[f'ord{i}'] for i in range(1, 7))
-        print(f"  전체 {len(predictions)}개 Ball 조합 | Ball→Ord(판매순위) | 실제ord: {format_ball_combination(actual_ord)}")
-    else:
-        print(f"  전체 {len(predictions)}개 Ball 조합")
-    print(f"{'='*90}")
 
     match_counts = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []}
     ord_match_counts = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []}
@@ -194,10 +190,8 @@ def print_ball_combinations(predictions: List[BallCombination], actual: tuple = 
     best_ord_match = 0
     best_ord_combo = None
 
-    for i, combo in enumerate(predictions, 1):
-        line = f"  {i:3d}. {format_ball_combination(combo.numbers)}"
-
-        # Ball 일치 계산 (요약용, 라인에는 표시 안함)
+    for i, combo in enumerate(predictions, start_num):
+        # Ball 일치 계산 (요약용)
         if actual:
             matched_nums = set(combo.numbers) & set(actual)
             match = len(matched_nums)
@@ -206,17 +200,18 @@ def print_ball_combinations(predictions: List[BallCombination], actual: tuple = 
                 best_match = match
                 best_combo = combo
 
-        # Ball→Ord 변환 및 나란히 표시
+        # Ball→Ord 변환 (오름차순 정렬)
         if round_data:
             ord_combo = convert_ball_combo_to_ord(combo.numbers, round_data)
+            ord_combo_sorted = tuple(sorted(ord_combo))  # 오름차순 정렬
             actual_ord_set = set(actual_ord)
-            matched = set(ord_combo) & actual_ord_set
+            matched = set(ord_combo_sorted) & actual_ord_set
             ord_match_count = len(matched)
             ord_match_counts[ord_match_count].append(sorted(matched))
 
             if ord_match_count > best_ord_match:
                 best_ord_match = ord_match_count
-                best_ord_combo = ord_combo
+                best_ord_combo = ord_combo_sorted
 
             # Ord 일치 개수 및 일치 번호 표시
             if ord_match_count >= 3:
@@ -224,47 +219,80 @@ def print_ball_combinations(predictions: List[BallCombination], actual: tuple = 
             else:
                 ord_mark = f"({ord_match_count}개)"
             ord_matched_str = f"{sorted(matched)}" if ord_match_count > 0 else ""
-            line += f" → {format_ball_combination(ord_combo)} {ord_mark} {ord_matched_str}"
+            line = f"  {i:3d}. {format_ball_combination(ord_combo_sorted)} {ord_mark} {ord_matched_str}"
+        else:
+            # round_data 없으면 Ball 조합 표시
+            line = f"  {i:3d}. {format_ball_combination(combo.numbers)}"
 
         print(line)
 
-    # Ball 일치 요약
-    if actual:
-        print(f"\n{'='*90}")
-        print(f"  Ball 일치 분포 요약")
-        print(f"{'='*90}")
-        print(f"  실제 당첨번호: {format_ball_combination(actual)}")
-        print(f"  최대 일치: {best_match}개")
-        if best_combo:
-            print(f"  최근접 조합: {format_ball_combination(best_combo.numbers)}")
-        print()
-        for m in range(6, -1, -1):
-            if match_counts[m]:
-                from collections import Counter
-                nums_counter = Counter(tuple(nums) for nums in match_counts[m])
-                nums_str = ", ".join(f"{list(nums)}" for nums, _ in nums_counter.most_common(5))
-                if len(nums_counter) > 5:
-                    nums_str += f" 외 {len(nums_counter)-5}개"
-                print(f"  {m}개 일치: {len(match_counts[m]):3d}개 → {nums_str}")
+    # 요약 데이터 반환
+    return {
+        'actual': actual,
+        'actual_ord': actual_ord,
+        'match_counts': match_counts,
+        'ord_match_counts': ord_match_counts,
+        'best_match': best_match,
+        'best_combo': best_combo,
+        'best_ord_match': best_ord_match,
+        'best_ord_combo': best_ord_combo
+    }
 
-    # Ball→Ord 일치 요약
-    if round_data:
-        print(f"\n{'='*90}")
-        print(f"  Ball→Ord(판매순위) 일치 분포 요약")
-        print(f"{'='*90}")
-        print(f"  실제 ord1-ord6: {format_ball_combination(actual_ord)}")
-        print(f"  최대 일치: {best_ord_match}개")
-        if best_ord_combo:
-            print(f"  최근접 조합: {format_ball_combination(best_ord_combo)}")
-        print()
-        for m in range(6, -1, -1):
-            if ord_match_counts[m]:
-                from collections import Counter
-                nums_counter = Counter(tuple(nums) for nums in ord_match_counts[m])
-                nums_str = ", ".join(f"{list(nums)}" for nums, _ in nums_counter.most_common(5))
-                if len(nums_counter) > 5:
-                    nums_str += f" 외 {len(nums_counter)-5}개"
-                print(f"  {m}개 일치: {len(ord_match_counts[m]):3d}개 → {nums_str}")
+
+def print_ball_summary(summary_data: dict):
+    """Ball 일치 분포 요약 출력"""
+    if not summary_data or not summary_data.get('actual'):
+        return
+
+    actual = summary_data['actual']
+    match_counts = summary_data['match_counts']
+    best_match = summary_data['best_match']
+    best_combo = summary_data['best_combo']
+
+    print(f"\n{'='*90}")
+    print(f"  Ball 일치 분포 요약")
+    print(f"{'='*90}")
+    print(f"  실제 당첨번호: {format_ball_combination(actual)}")
+    print(f"  최대 일치: {best_match}개")
+    if best_combo:
+        print(f"  최근접 조합: {format_ball_combination(best_combo.numbers)}")
+    print()
+    for m in range(6, -1, -1):
+        if match_counts[m]:
+            from collections import Counter
+            nums_counter = Counter(tuple(nums) for nums in match_counts[m])
+            nums_str = ", ".join(f"{list(nums)}" for nums, _ in nums_counter.most_common(5))
+            if len(nums_counter) > 5:
+                nums_str += f" 외 {len(nums_counter)-5}개"
+            print(f"  {m}개 일치: {len(match_counts[m]):3d}개 → {nums_str}")
+
+
+def print_ball_ord_summary(summary_data: dict):
+    """Ball→Ord 일치 분포 요약 출력"""
+    if not summary_data or not summary_data.get('actual_ord'):
+        return
+
+    actual_ord = summary_data['actual_ord']
+    ord_match_counts = summary_data['ord_match_counts']
+    best_ord_match = summary_data['best_ord_match']
+    best_ord_combo = summary_data['best_ord_combo']
+
+    print(f"\n{'='*90}")
+    print(f"  Ball→Ord(판매순위) 일치 분포 요약")
+    print(f"{'='*90}")
+    print(f"  실제 ord1-ord6: {format_ball_combination(actual_ord)}")
+    print(f"  최대 일치: {best_ord_match}개")
+    if best_ord_combo:
+        print(f"  최근접 조합: {format_ball_combination(best_ord_combo)}")
+    print()
+    for m in range(6, -1, -1):
+        if ord_match_counts[m]:
+            from collections import Counter
+            nums_counter = Counter(tuple(nums) for nums in ord_match_counts[m])
+            nums_str = ", ".join(f"{list(nums)}" for nums, _ in nums_counter.most_common(5))
+            if len(nums_counter) > 5:
+                nums_str += f" 외 {len(nums_counter)-5}개"
+            print(f"  {m}개 일치: {len(ord_match_counts[m]):3d}개 → {nums_str}")
 
 
 if __name__ == '__main__':
