@@ -429,7 +429,7 @@ def save_frequency_to_csv(target_round: int, ord_predictions: List, ball_predict
     print(f"\n  → CSV 저장 완료: {csv_path} (빈도수: {freq_str})")
 
 
-def print_position_frequency(ord_predictions: List, ball_predictions: List = None, actual_data: dict = None):
+def print_position_frequency(ord_predictions: List, ball_predictions: List = None, actual_data: dict = None, target_round: int = None):
     """각 위치(ord1~ord6)별 숫자 빈도수 표 출력"""
     from collections import Counter
 
@@ -486,6 +486,27 @@ def print_position_frequency(ord_predictions: List, ball_predictions: List = Non
             else:
                 line += "              "
         print(line)
+
+    # 다음 회차 예측인 경우 (actual_data가 없음) result 폴더에 CSV 저장
+    if actual_data is None:
+        result_dir = Path(__file__).parent.parent / "result"
+        result_dir.mkdir(exist_ok=True)
+        filename = f"{target_round}_frequency.csv" if target_round else "frequency.csv"
+        csv_path = result_dir / filename
+        with open(csv_path, 'w', encoding='utf-8') as f:
+            # 헤더
+            f.write("ord1,ord2,ord3,ord4,ord5,ord6\n")
+            # 각 행 출력
+            for row in range(max_rows):
+                row_data = []
+                for pos in range(6):
+                    if row < len(sorted_items_list[pos]):
+                        num, cnt = sorted_items_list[pos][row]
+                        row_data.append(f"{num}({cnt})")
+                    else:
+                        row_data.append("")
+                f.write(",".join(row_data) + "\n")
+        print(f"\n  → 빈도수 저장: {csv_path}")
 
 
 def print_combined_summary(ord_summary: dict, ball_summary: dict = None):
@@ -694,7 +715,7 @@ def main():
             print_ball_combinations(ball_predictions, None, None, start_num=101)
 
         # 3. 위치별 빈도수 표
-        print_position_frequency(predictions, ball_predictions, None)
+        print_position_frequency(predictions, ball_predictions, None, next_round)
 
 
 if __name__ == '__main__':
