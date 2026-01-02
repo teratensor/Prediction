@@ -441,17 +441,24 @@ def print_position_frequency(ord_predictions: List, ball_predictions: List = Non
         for j in range(6):
             position_numbers[j].append(combo.numbers[j])
 
-    # Ball→Ord 조합
-    if ball_predictions and actual_data:
-        _ball_base = Path(__file__).parent.parent / "5_ball_predict"
-        ball_common = load_module("ball_common", _ball_base / "common.py")
-        convert_ball_combo_to_ord = ball_common.convert_ball_combo_to_ord
+    # Ball→Ord 조합 (또는 actual_data 없을 때는 정렬된 Ball 숫자 사용)
+    if ball_predictions:
+        if actual_data:
+            _ball_base = Path(__file__).parent.parent / "5_ball_predict"
+            ball_common = load_module("ball_common", _ball_base / "common.py")
+            convert_ball_combo_to_ord = ball_common.convert_ball_combo_to_ord
 
-        for combo in ball_predictions:
-            ord_combo = convert_ball_combo_to_ord(combo.numbers, actual_data)
-            ord_combo_sorted = tuple(sorted(ord_combo))
-            for j in range(6):
-                position_numbers[j].append(ord_combo_sorted[j])
+            for combo in ball_predictions:
+                ord_combo = convert_ball_combo_to_ord(combo.numbers, actual_data)
+                ord_combo_sorted = tuple(sorted(ord_combo))
+                for j in range(6):
+                    position_numbers[j].append(ord_combo_sorted[j])
+        else:
+            # actual_data가 없을 때 (다음 회차 예측): Ball 숫자를 정렬하여 사용
+            for combo in ball_predictions:
+                sorted_nums = tuple(sorted(combo.numbers))
+                for j in range(6):
+                    position_numbers[j].append(sorted_nums[j])
 
     # 위치별 빈도수 계산
     position_counters = [Counter(nums) for nums in position_numbers]
