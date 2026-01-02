@@ -213,16 +213,13 @@ def print_ball_combinations(predictions: List[BallCombination], actual: tuple = 
                 best_ord_match = ord_match_count
                 best_ord_combo = ord_combo_sorted
 
-            # 원핫인코딩: 각 번호가 실제 당첨번호에 포함되는지 (1=포함, 0=미포함)
-            onehot = ''.join('1' if ord_combo_sorted[j] in actual_ord_set else '0' for j in range(6))
-
             # Ord 일치 개수 및 일치 번호 표시
             if ord_match_count >= 3:
                 ord_mark = "★" * (ord_match_count - 2)
             else:
                 ord_mark = f"({ord_match_count}개)"
             ord_matched_str = f"{sorted(matched)}" if ord_match_count > 0 else ""
-            line = f"  {i:3d}. {format_ball_combination(ord_combo_sorted)} {ord_mark} {onehot} {ord_matched_str}"
+            line = f"  {i:3d}. {format_ball_combination(ord_combo_sorted)} {ord_mark} {ord_matched_str}"
         else:
             # round_data 없으면 Ball 조합 표시
             line = f"  {i:3d}. {format_ball_combination(combo.numbers)}"

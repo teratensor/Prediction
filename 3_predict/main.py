@@ -328,17 +328,13 @@ def print_all_combinations(predictions: List[Combination], actual: tuple = None,
                 best_match = match
                 best_combo = combo
 
-            # 원핫인코딩: 각 번호가 실제 당첨번호에 포함되는지 (1=포함, 0=미포함)
-            actual_set = set(actual)
-            onehot = ''.join('1' if combo.numbers[j] in actual_set else '0' for j in range(6))
-
             # 일치 개수 및 일치 번호 표시
             if match >= 3:
                 mark = "★" * (match - 2)
             else:
                 mark = f"({match}개)"
             matched_str = f"{sorted(matched_nums)}" if match > 0 else ""
-            line += f" {mark} {onehot} {matched_str}"
+            line += f" {mark} {matched_str}"
 
         print(line)
 
@@ -351,17 +347,19 @@ def print_all_combinations(predictions: List[Combination], actual: tuple = None,
     }
 
 
-def save_onehot_to_csv(target_round: int, ord_predictions: List, ball_predictions: List, actual_ord: tuple, actual_data: dict = None):
+def save_frequency_to_csv(target_round: int, ord_predictions: List, ball_predictions: List, actual_ord: tuple, actual_data: dict = None):
     """
-    회차별 원핫인코딩 합계를 CSV로 저장 (회차당 1줄)
+    회차별 실제 당첨번호의 위치별 빈도수를 CSV로 저장
 
     Args:
         target_round: 예측 회차
         ord_predictions: Ord 예측 조합 리스트
         ball_predictions: Ball 예측 조합 리스트
-        actual_ord: 실제 당첨번호 (ord)
+        actual_ord: 실제 당첨번호 (ord1~ord6)
         actual_data: 전체 회차 데이터 (Ball→Ord 변환용)
     """
+    from collections import Counter
+
     result_dir = Path(__file__).parent.parent / "result"
     result_dir.mkdir(exist_ok=True)
     csv_path = result_dir / "onehot.csv"
@@ -375,36 +373,42 @@ def save_onehot_to_csv(target_round: int, ord_predictions: List, ball_prediction
                 if int(row['round']) != target_round:
                     existing_rows.append(row)
 
-    # 원핫인코딩 열별 합계 계산
-    onehot_sums = [0, 0, 0, 0, 0, 0]
-    actual_set = set(actual_ord)
+    # 위치별 숫자 수집
+    position_numbers = [[] for _ in range(6)]
 
-    # Ord 조합 (1~100번)
+    # Ord 조합
     for combo in ord_predictions:
         for j in range(6):
-            if combo.numbers[j] in actual_set:
-                onehot_sums[j] += 1
+            position_numbers[j].append(combo.numbers[j])
 
-    # Ball→Ord 조합 (101~200번)
+    # Ball→Ord 조합
     if ball_predictions and actual_data:
         _ball_base = Path(__file__).parent.parent / "5_ball_predict"
         ball_common = load_module("ball_common", _ball_base / "common.py")
         convert_ball_combo_to_ord = ball_common.convert_ball_combo_to_ord
 
-        actual_ord_set = set(actual_ord)
         for combo in ball_predictions:
             ord_combo = convert_ball_combo_to_ord(combo.numbers, actual_data)
             ord_combo_sorted = tuple(sorted(ord_combo))
             for j in range(6):
-                if ord_combo_sorted[j] in actual_ord_set:
-                    onehot_sums[j] += 1
+                position_numbers[j].append(ord_combo_sorted[j])
 
-    onehot_sum_str = ','.join(str(s) for s in onehot_sums)
+    # 위치별 빈도수 계산
+    position_counters = [Counter(nums) for nums in position_numbers]
+
+    # 실제 당첨번호의 각 위치별 빈도수 추출
+    freq_values = []
+    for j in range(6):
+        actual_num = actual_ord[j]
+        freq = position_counters[j].get(actual_num, 0)
+        freq_values.append(freq)
+
+    freq_str = ','.join(str(f) for f in freq_values)
 
     # 새 데이터 (1줄)
     new_row = {
         'round': target_round,
-        'onehot_sum': onehot_sum_str
+        'frequency': freq_str
     }
 
     # 기존 + 새 데이터 병합 후 정렬
@@ -413,11 +417,51 @@ def save_onehot_to_csv(target_round: int, ord_predictions: List, ball_prediction
 
     # CSV 저장
     with open(csv_path, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['round', 'onehot_sum'])
+        writer = csv.DictWriter(f, fieldnames=['round', 'frequency'])
         writer.writeheader()
         writer.writerows(all_rows)
 
-    print(f"\n  → CSV 저장 완료: {csv_path} (합계: {onehot_sum_str})")
+    print(f"\n  → CSV 저장 완료: {csv_path} (빈도수: {freq_str})")
+
+
+def print_position_frequency(ord_predictions: List, ball_predictions: List = None, actual_data: dict = None):
+    """각 위치(ord1~ord6)별 숫자 빈도수 표 출력"""
+    from collections import Counter
+
+    # 위치별 숫자 수집
+    position_numbers = [[] for _ in range(6)]
+
+    # Ord 조합
+    for combo in ord_predictions:
+        for j in range(6):
+            position_numbers[j].append(combo.numbers[j])
+
+    # Ball→Ord 조합
+    if ball_predictions and actual_data:
+        _ball_base = Path(__file__).parent.parent / "5_ball_predict"
+        ball_common = load_module("ball_common", _ball_base / "common.py")
+        convert_ball_combo_to_ord = ball_common.convert_ball_combo_to_ord
+
+        for combo in ball_predictions:
+            ord_combo = convert_ball_combo_to_ord(combo.numbers, actual_data)
+            ord_combo_sorted = tuple(sorted(ord_combo))
+            for j in range(6):
+                position_numbers[j].append(ord_combo_sorted[j])
+
+    # 위치별 빈도수 계산
+    position_counters = [Counter(nums) for nums in position_numbers]
+
+    # 표 출력
+    print(f"\n{'='*70}")
+    print(f"  위치별 숫자 빈도수 (총 {len(ord_predictions) + (len(ball_predictions) if ball_predictions else 0)}개 조합)")
+    print(f"{'='*70}")
+
+    for pos in range(6):
+        counter = position_counters[pos]
+        # 빈도수 높은 순으로 정렬하여 전체 출력
+        sorted_items = sorted(counter.items(), key=lambda x: -x[1])
+        freq_str = ", ".join(f"{num}({cnt})" for num, cnt in sorted_items)
+        print(f"  ord{pos+1}: {freq_str}")
 
 
 def print_combined_summary(ord_summary: dict, ball_summary: dict = None):
@@ -542,9 +586,12 @@ def main():
             # 3. 통합 일치 분포 요약
             print_combined_summary(ord_summary, ball_summary)
 
-            # 4. CSV 저장
+            # 4. 위치별 빈도수 표
+            print_position_frequency(predictions, ball_predictions, actual_data)
+
+            # 5. CSV 저장
             if actual_ord:
-                save_onehot_to_csv(target_round, predictions, ball_predictions, actual_ord, actual_data)
+                save_frequency_to_csv(target_round, predictions, ball_predictions, actual_ord, actual_data)
 
     elif len(args.rounds) == 1:
         # 단일 회차 예측
@@ -585,9 +632,12 @@ def main():
         # 3. 통합 일치 분포 요약
         print_combined_summary(ord_summary, ball_summary)
 
-        # 4. CSV 저장
+        # 4. 위치별 빈도수 표
+        print_position_frequency(predictions, ball_predictions, actual_data)
+
+        # 5. CSV 저장
         if actual_ord:
-            save_onehot_to_csv(target_round, predictions, ball_predictions, actual_ord, actual_data)
+            save_frequency_to_csv(target_round, predictions, ball_predictions, actual_ord, actual_data)
 
     else:
         # 기본: 가장 최근 회차 + 1 예측
