@@ -360,9 +360,9 @@ def save_frequency_to_csv(target_round: int, ord_predictions: List, ball_predict
     """
     from collections import Counter
 
-    result_dir = Path(__file__).parent.parent / "result"
+    result_dir = Path(__file__).parent.parent / "6_position_frequency"
     result_dir.mkdir(exist_ok=True)
-    csv_path = result_dir / "onehot.csv"
+    csv_path = result_dir / "positionf.csv"
 
     # 기존 데이터 로드 (해당 회차 제외)
     existing_rows = []
@@ -451,17 +451,36 @@ def print_position_frequency(ord_predictions: List, ball_predictions: List = Non
     # 위치별 빈도수 계산
     position_counters = [Counter(nums) for nums in position_numbers]
 
-    # 표 출력
-    print(f"\n{'='*70}")
-    print(f"  위치별 숫자 빈도수 (총 {len(ord_predictions) + (len(ball_predictions) if ball_predictions else 0)}개 조합)")
-    print(f"{'='*70}")
+    # 표 형식 출력 (ord1~ord6 가로 나열)
+    total_combos = len(ord_predictions) + (len(ball_predictions) if ball_predictions else 0)
+    print(f"\n{'='*90}")
+    print(f"  위치별 숫자 빈도수 (총 {total_combos}개 조합)")
+    print(f"{'='*90}")
 
+    # 각 위치별로 빈도순 정렬
+    sorted_items_list = []
+    max_rows = 0
     for pos in range(6):
         counter = position_counters[pos]
-        # 빈도수 높은 순으로 정렬하여 전체 출력
         sorted_items = sorted(counter.items(), key=lambda x: -x[1])
-        freq_str = ", ".join(f"{num}({cnt})" for num, cnt in sorted_items)
-        print(f"  ord{pos+1}: {freq_str}")
+        sorted_items_list.append(sorted_items)
+        max_rows = max(max_rows, len(sorted_items))
+
+    # 헤더 출력
+    header = "  " + "".join(f"{'ord'+str(i+1):^14}" for i in range(6))
+    print(header)
+    print("  " + "-" * 84)
+
+    # 각 행 출력
+    for row in range(max_rows):
+        line = "  "
+        for pos in range(6):
+            if row < len(sorted_items_list[pos]):
+                num, cnt = sorted_items_list[pos][row]
+                line += f"{num:2d}({cnt:3d})       "
+            else:
+                line += "              "
+        print(line)
 
 
 def print_combined_summary(ord_summary: dict, ball_summary: dict = None):
@@ -668,6 +687,9 @@ def main():
         # 2. Ball→Ord 100개 조합 출력 (101번부터)
         if ball_predictions:
             print_ball_combinations(ball_predictions, None, None, start_num=101)
+
+        # 3. 위치별 빈도수 표
+        print_position_frequency(predictions, ball_predictions, None)
 
 
 if __name__ == '__main__':
