@@ -61,8 +61,6 @@ try:
     ball_main = load_module("ball_main", _ball_base / "main.py")
     predict_ball_for_round = ball_main.predict_ball_for_round
     print_ball_combinations = ball_main.print_ball_combinations
-    print_ball_summary = ball_main.print_ball_summary
-    print_ball_ord_summary = ball_main.print_ball_ord_summary
     BALL_PREDICT_AVAILABLE = True
 except Exception:
     BALL_PREDICT_AVAILABLE = False
@@ -347,32 +345,62 @@ def print_all_combinations(predictions: List[Combination], actual: tuple = None,
     }
 
 
-def print_ord_summary(summary_data: dict):
-    """Ord 일치 분포 요약 출력"""
-    if not summary_data or not summary_data.get('actual'):
+def print_combined_summary(ord_summary: dict, ball_summary: dict = None):
+    """Ord + Ball→Ord 통합 일치 분포 요약 출력 (200개 통합)"""
+    if not ord_summary or not ord_summary.get('actual'):
         return
 
-    actual = summary_data['actual']
-    match_counts = summary_data['match_counts']
-    best_match = summary_data['best_match']
-    best_combo = summary_data['best_combo']
+    from collections import Counter
+
+    actual = ord_summary['actual']
+    ord_match_counts = ord_summary['match_counts']
+    ord_best_match = ord_summary['best_match']
+    ord_best_combo = ord_summary['best_combo']
+
+    # Ball→Ord 데이터 추출 및 통합
+    ball_ord_match_counts = ball_summary.get('ord_match_counts') if ball_summary else None
+    ball_ord_best_match = ball_summary.get('best_ord_match') if ball_summary else None
+    ball_ord_best_combo = ball_summary.get('best_ord_combo') if ball_summary else None
+
+    # 통합 카운트 및 일치번호 리스트 계산
+    combined_counts = {}
+    combined_matched_nums = {}
+    for m in range(7):
+        ord_list = ord_match_counts[m] if ord_match_counts[m] else []
+        ball_ord_list = ball_ord_match_counts[m] if ball_ord_match_counts and ball_ord_match_counts[m] else []
+        combined_counts[m] = len(ord_list) + len(ball_ord_list)
+        combined_matched_nums[m] = ord_list + ball_ord_list
+
+    # 최대 일치 (통합)
+    best_match = ord_best_match
+    best_combo = ord_best_combo
+    if ball_ord_best_match is not None and ball_ord_best_match > best_match:
+        best_match = ball_ord_best_match
+        best_combo = ball_ord_best_combo
+
+    # 총 조합 수
+    total = sum(combined_counts.values())
 
     print(f"\n{'='*70}")
-    print(f"  Ord 일치 분포 요약")
+    print(f"  일치 분포 요약 (총 {total}개 조합)")
     print(f"{'='*70}")
     print(f"  실제 당첨번호: {format_combination(actual)}")
     print(f"  최대 일치: {best_match}개")
     if best_combo:
-        print(f"  최근접 조합: {format_combination(best_combo.numbers)}")
+        if isinstance(best_combo, tuple):
+            print(f"  최근접 조합: {format_combination(best_combo)}")
+        else:
+            print(f"  최근접 조합: {format_combination(best_combo.numbers)}")
     print()
+
     for m in range(6, -1, -1):
-        if match_counts[m]:
-            from collections import Counter
-            nums_counter = Counter(tuple(nums) for nums in match_counts[m])
+        if combined_counts[m] > 0:
+            # 일치 번호 패턴 집계
+            nums_counter = Counter(tuple(nums) for nums in combined_matched_nums[m])
             nums_str = ", ".join(f"{list(nums)}" for nums, _ in nums_counter.most_common(5))
             if len(nums_counter) > 5:
                 nums_str += f" 외 {len(nums_counter)-5}개"
-            print(f"  {m}개 일치: {len(match_counts[m]):3d}개 → {nums_str}")
+            print(f"  {m}개 일치: {combined_counts[m]:3d}개 → {nums_str}")
 
 
 def main():
@@ -436,16 +464,8 @@ def main():
             if ball_predictions:
                 ball_summary = print_ball_combinations(ball_predictions, actual_ball, actual_data, start_num=101)
 
-            # 3. Ord 일치 분포 요약
-            print_ord_summary(ord_summary)
-
-            # 4. Ball 일치 분포 요약
-            if ball_summary:
-                print_ball_summary(ball_summary)
-
-            # 5. Ball→Ord 일치 분포 요약
-            if ball_summary:
-                print_ball_ord_summary(ball_summary)
+            # 3. 통합 일치 분포 요약
+            print_combined_summary(ord_summary, ball_summary)
 
     elif len(args.rounds) == 1:
         # 단일 회차 예측
@@ -483,16 +503,8 @@ def main():
         if ball_predictions:
             ball_summary = print_ball_combinations(ball_predictions, actual_ball, actual_data, start_num=101)
 
-        # 3. Ord 일치 분포 요약
-        print_ord_summary(ord_summary)
-
-        # 4. Ball 일치 분포 요약
-        if ball_summary:
-            print_ball_summary(ball_summary)
-
-        # 5. Ball→Ord 일치 분포 요약
-        if ball_summary:
-            print_ball_ord_summary(ball_summary)
+        # 3. 통합 일치 분포 요약
+        print_combined_summary(ord_summary, ball_summary)
 
     else:
         # 기본: 가장 최근 회차 + 1 예측
