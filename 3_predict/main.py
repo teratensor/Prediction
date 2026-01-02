@@ -403,12 +403,15 @@ def save_frequency_to_csv(target_round: int, ord_predictions: List, ball_predict
         freq = position_counters[j].get(actual_num, 0)
         freq_values.append(freq)
 
-    freq_str = ','.join(str(f) for f in freq_values)
-
-    # 새 데이터 (1줄)
+    # 새 데이터 (1줄) - ord1~ord6 개별 컬럼
     new_row = {
         'round': target_round,
-        'frequency': freq_str
+        'ord1': freq_values[0],
+        'ord2': freq_values[1],
+        'ord3': freq_values[2],
+        'ord4': freq_values[3],
+        'ord5': freq_values[4],
+        'ord6': freq_values[5]
     }
 
     # 기존 + 새 데이터 병합 후 정렬
@@ -416,11 +419,13 @@ def save_frequency_to_csv(target_round: int, ord_predictions: List, ball_predict
     all_rows.sort(key=lambda x: int(x['round']))
 
     # CSV 저장
+    fieldnames = ['round', 'ord1', 'ord2', 'ord3', 'ord4', 'ord5', 'ord6']
     with open(csv_path, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['round', 'frequency'])
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(all_rows)
 
+    freq_str = ','.join(str(f) for f in freq_values)
     print(f"\n  → CSV 저장 완료: {csv_path} (빈도수: {freq_str})")
 
 
