@@ -14,6 +14,7 @@
 """
 
 import sys
+import csv
 from pathlib import Path
 from typing import List, Dict, Tuple
 from itertools import product
@@ -307,9 +308,10 @@ def print_backtest_summary(summary: Dict):
 
 def print_all_combinations(predictions: List[Combination], actual: tuple = None, start_num: int = 1):
     """100개 조합 전체 출력 (일치 수 표시) - 요약 데이터 반환"""
-    print(f"\n{'='*70}")
-    print(f"  전체 {len(predictions)}개 Ord 조합")
-    print(f"{'='*70}")
+    if start_num == 1:
+        print(f"\n{'='*70}")
+        print(f"  전체 200개 Ord 조합 (Ball→Ord 포함)")
+        print(f"{'='*70}")
 
     match_counts = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []}
     best_match = 0
@@ -326,13 +328,17 @@ def print_all_combinations(predictions: List[Combination], actual: tuple = None,
                 best_match = match
                 best_combo = combo
 
+            # 원핫인코딩: 각 번호가 실제 당첨번호에 포함되는지 (1=포함, 0=미포함)
+            actual_set = set(actual)
+            onehot = ''.join('1' if combo.numbers[j] in actual_set else '0' for j in range(6))
+
             # 일치 개수 및 일치 번호 표시
             if match >= 3:
                 mark = "★" * (match - 2)
             else:
                 mark = f"({match}개)"
             matched_str = f"{sorted(matched_nums)}" if match > 0 else ""
-            line += f" {mark} {matched_str}"
+            line += f" {mark} {onehot} {matched_str}"
 
         print(line)
 
@@ -343,6 +349,75 @@ def print_all_combinations(predictions: List[Combination], actual: tuple = None,
         'best_combo': best_combo,
         'actual': actual
     }
+
+
+def save_onehot_to_csv(target_round: int, ord_predictions: List, ball_predictions: List, actual_ord: tuple, actual_data: dict = None):
+    """
+    회차별 원핫인코딩 합계를 CSV로 저장 (회차당 1줄)
+
+    Args:
+        target_round: 예측 회차
+        ord_predictions: Ord 예측 조합 리스트
+        ball_predictions: Ball 예측 조합 리스트
+        actual_ord: 실제 당첨번호 (ord)
+        actual_data: 전체 회차 데이터 (Ball→Ord 변환용)
+    """
+    result_dir = Path(__file__).parent.parent / "result"
+    result_dir.mkdir(exist_ok=True)
+    csv_path = result_dir / "onehot.csv"
+
+    # 기존 데이터 로드 (해당 회차 제외)
+    existing_rows = []
+    if csv_path.exists():
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if int(row['round']) != target_round:
+                    existing_rows.append(row)
+
+    # 원핫인코딩 열별 합계 계산
+    onehot_sums = [0, 0, 0, 0, 0, 0]
+    actual_set = set(actual_ord)
+
+    # Ord 조합 (1~100번)
+    for combo in ord_predictions:
+        for j in range(6):
+            if combo.numbers[j] in actual_set:
+                onehot_sums[j] += 1
+
+    # Ball→Ord 조합 (101~200번)
+    if ball_predictions and actual_data:
+        _ball_base = Path(__file__).parent.parent / "5_ball_predict"
+        ball_common = load_module("ball_common", _ball_base / "common.py")
+        convert_ball_combo_to_ord = ball_common.convert_ball_combo_to_ord
+
+        actual_ord_set = set(actual_ord)
+        for combo in ball_predictions:
+            ord_combo = convert_ball_combo_to_ord(combo.numbers, actual_data)
+            ord_combo_sorted = tuple(sorted(ord_combo))
+            for j in range(6):
+                if ord_combo_sorted[j] in actual_ord_set:
+                    onehot_sums[j] += 1
+
+    onehot_sum_str = ','.join(str(s) for s in onehot_sums)
+
+    # 새 데이터 (1줄)
+    new_row = {
+        'round': target_round,
+        'onehot_sum': onehot_sum_str
+    }
+
+    # 기존 + 새 데이터 병합 후 정렬
+    all_rows = existing_rows + [new_row]
+    all_rows.sort(key=lambda x: int(x['round']))
+
+    # CSV 저장
+    with open(csv_path, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=['round', 'onehot_sum'])
+        writer.writeheader()
+        writer.writerows(all_rows)
+
+    print(f"\n  → CSV 저장 완료: {csv_path} (합계: {onehot_sum_str})")
 
 
 def print_combined_summary(ord_summary: dict, ball_summary: dict = None):
@@ -467,6 +542,10 @@ def main():
             # 3. 통합 일치 분포 요약
             print_combined_summary(ord_summary, ball_summary)
 
+            # 4. CSV 저장
+            if actual_ord:
+                save_onehot_to_csv(target_round, predictions, ball_predictions, actual_ord, actual_data)
+
     elif len(args.rounds) == 1:
         # 단일 회차 예측
         target_round = args.rounds[0]
@@ -505,6 +584,10 @@ def main():
 
         # 3. 통합 일치 분포 요약
         print_combined_summary(ord_summary, ball_summary)
+
+        # 4. CSV 저장
+        if actual_ord:
+            save_onehot_to_csv(target_round, predictions, ball_predictions, actual_ord, actual_data)
 
     else:
         # 기본: 가장 최근 회차 + 1 예측
